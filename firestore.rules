@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isValidAvatar(data) {
+      return data.uid is string &&
+             data.description is string && data.description.size() < 2000 &&
+             data.age is number &&
+             data.gender is string &&
+             data.race is string &&
+             data.occupation is string &&
+             data.lat is number && data.lng is number &&
+             data.lastVisit is string &&
+             data.createdAt is string &&
+             data.currentStatus is string &&
+             (!('lastLogTimestamp' in data) || data.lastLogTimestamp is string);
+    }
+
+    function isValidLifeLog(data) {
+      return data.uid is string &&
+             data.text is string && data.text.size() < 1000 &&
+             data.timestamp is string;
+    }
+
+    // Avatars collection
+    match /avatars/{avatarId} {
+      allow read: if true;
+      
+      allow create: if isAuthenticated() && 
+                      request.resource.data.uid == request.auth.uid &&
+                      isValidAvatar(request.resource.data);
+      
+      allow update: if isOwner(resource.data.uid) && 
+                      isValidAvatar(request.resource.data);
+      
+      allow delete: if isOwner(resource.data.uid);
+
+      // Life Logs subcollection
+      match /life_logs/{logId} {
+        allow read: if true;
+        allow create: if isOwner(get(/databases/$(database)/documents/avatars/$(avatarId)).data.uid) &&
+                        isValidLifeLog(request.resource.data);
+      }
+    }
+  }
+}

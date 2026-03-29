@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "Avatar": {
+      "title": "Avatar",
+      "description": "A digital representation of a user anchored on Earth.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The Firebase Auth UID of the owner." },
+        "description": { "type": "string", "description": "The foundational personality profile." },
+        "age": { "type": "number", "description": "Age of the avatar." },
+        "gender": { "type": "string", "description": "Gender of the avatar." },
+        "race": { "type": "string", "description": "Race/Ethnicity of the avatar." },
+        "occupation": { "type": "string", "description": "Occupation of the avatar." },
+        "color": { "type": "string", "description": "Hex color of the marker." },
+        "shape": { "type": "string", "description": "Shape of the marker (circle, square, heart, star)." },
+        "lat": { "type": "number", "description": "Current latitude." },
+        "lng": { "type": "number", "description": "Current longitude." },
+        "lastVisit": { "type": "string", "format": "date-time", "description": "Timestamp of the last time the user visited." },
+        "lastLogTimestamp": { "type": "string", "format": "date-time", "description": "Timestamp of the last life log entry generated." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp of creation." },
+        "currentStatus": { "type": "string", "description": "A short narrative of their current situation." }
+      },
+      "required": ["uid", "description", "lat", "lng", "lastVisit", "createdAt", "age", "gender", "race", "occupation", "color", "shape"]
+    },
+    "LifeLog": {
+      "title": "LifeLog",
+      "description": "A daily log entry for an avatar's life.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The UID of the avatar owner." },
+        "text": { "type": "string", "description": "The content of the log entry." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "The timestamp of the log entry." }
+      },
+      "required": ["uid", "text", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/avatars/{avatarId}": {
+      "schema": "Avatar",
+      "description": "Collection of user avatars."
+    },
+    "/avatars/{avatarId}/life_logs/{logId}": {
+      "schema": "LifeLog",
+      "description": "Subcollection of life logs for an avatar."
+    }
+  }
+}
