@@ -12,7 +12,7 @@
         "race": { "type": "string", "description": "Race/Ethnicity of the avatar." },
         "occupation": { "type": "string", "description": "Occupation of the avatar." },
         "color": { "type": "string", "description": "Hex color of the marker." },
-        "shape": { "type": "string", "description": "Shape of the marker (circle, square, heart, star)." },
+        "imageUrl": { "type": "string", "description": "Base64 encoded drawing of the avatar." },
         "lat": { "type": "number", "description": "Current latitude." },
         "lng": { "type": "number", "description": "Current longitude." },
         "lastVisit": { "type": "string", "format": "date-time", "description": "Timestamp of the last time the user visited." },
@@ -20,7 +20,7 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp of creation." },
         "currentStatus": { "type": "string", "description": "A short narrative of their current situation." }
       },
-      "required": ["uid", "description", "lat", "lng", "lastVisit", "createdAt", "age", "gender", "race", "occupation", "color", "shape"]
+      "required": ["uid", "description", "lat", "lng", "lastVisit", "createdAt", "age", "gender", "race", "occupation", "color", "imageUrl"]
     },
     "LifeLog": {
       "title": "LifeLog",

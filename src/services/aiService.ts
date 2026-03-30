@@ -113,9 +113,10 @@ export async function generateCurrentState(profile: any): Promise<string> {
       
       Requirements:
       - Be very literal and concrete (e.g., "Sipping a protein shake", "Watching a late-night talk show", "Fast asleep").
-      - Match the activity to the local time (e.g., if it's 3 AM, they are likely sleeping or doing something very late-night).
-      - Incorporate their personality/occupation (e.g., a gym-goer might be at the gym, an artist might be sketching).
+      - Match the activity to the local time.
+      - Incorporate their personality/occupation.
       - Keep it under 15 words.
+      - DO NOT use generic phrases like "settling in" or "looking around". Be specific.
       
       Example: "This person is currently sipping on pre-workout before a late-night gym session."`,
       config: {

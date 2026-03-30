@@ -18,6 +18,8 @@ service cloud.firestore {
              data.gender is string &&
              data.race is string &&
              data.occupation is string &&
+             data.color is string &&
+             data.imageUrl is string &&
              data.lat is number && data.lng is number &&
              data.lastVisit is string &&
              data.createdAt is string &&
@@ -46,7 +48,7 @@ service cloud.firestore {
 
       // Life Logs subcollection
       match /life_logs/{logId} {
-        allow read: if true;
+        allow read: if isOwner(get(/databases/$(database)/documents/avatars/$(avatarId)).data.uid);
         allow create: if isOwner(get(/databases/$(database)/documents/avatars/$(avatarId)).data.uid) &&
                         isValidLifeLog(request.resource.data);
       }

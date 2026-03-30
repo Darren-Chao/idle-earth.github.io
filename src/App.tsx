@@ -40,6 +40,7 @@ interface AvatarData {
   lat: number;
   lng: number;
   color: string;
+  imageUrl: string;
   lastVisit: string;
   lastLogTimestamp?: string;
   createdAt: string;
@@ -54,6 +55,116 @@ interface LifeLog {
 }
 
 // --- Components ---
+
+const DrawingCanvas = ({ onSave, initialColor = '#ffffff' }: { onSave: (dataUrl: string) => void, initialColor?: string }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [color, setColor] = useState(initialColor);
+  const [brushSize, setBrushSize] = useState(5);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = brushSize;
+  }, [color, brushSize]);
+
+  const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    setIsDrawing(true);
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    let x, y;
+    if ('touches' in e) {
+      x = e.touches[0].clientX - rect.left;
+      y = e.touches[0].clientY - rect.top;
+    } else {
+      x = e.clientX - rect.left;
+      y = e.clientY - rect.top;
+    }
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+    const canvas = canvasRef.current;
+    if (canvas) {
+      onSave(canvas.toDataURL());
+    }
+  };
+
+  const draw = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    let x, y;
+    if ('touches' in e) {
+      x = e.touches[0].clientX - rect.left;
+      y = e.touches[0].clientY - rect.top;
+    } else {
+      x = e.clientX - rect.left;
+      y = e.clientY - rect.top;
+    }
+
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const clear = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    onSave('');
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div className="flex gap-2 flex-wrap">
+          {['#ffffff', '#ff4444', '#44ff44', '#4444ff', '#ffff44', '#ff44ff', '#44ffff'].map(c => (
+            <button
+              key={c}
+              onClick={() => setColor(c)}
+              className={`w-5 h-5 rounded-full border-2 ${color === c ? 'border-white' : 'border-transparent'}`}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-5 h-5 bg-transparent border-0 p-0 cursor-pointer" />
+        </div>
+        <button onClick={clear} className="text-[10px] uppercase tracking-widest opacity-40 hover:opacity-100">Clear</button>
+      </div>
+      <div className="relative aspect-square w-full bg-white/5 rounded-xl overflow-hidden border border-white/10 cursor-crosshair">
+        <canvas
+          ref={canvasRef}
+          width={400}
+          height={400}
+          onMouseDown={startDrawing}
+          onMouseMove={draw}
+          onMouseUp={stopDrawing}
+          onMouseLeave={stopDrawing}
+          onTouchStart={startDrawing}
+          onTouchMove={draw}
+          onTouchEnd={stopDrawing}
+          className="w-full h-full"
+        />
+      </div>
+    </div>
+  );
+};
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -72,6 +183,7 @@ export default function App() {
   const [newAvatarRace, setNewAvatarRace] = useState('Prefer not to say');
   const [newAvatarOccupation, setNewAvatarOccupation] = useState('');
   const [newAvatarColor, setNewAvatarColor] = useState('#ffffff');
+  const [newAvatarImageUrl, setNewAvatarImageUrl] = useState('');
   
   const [tempMarker, setTempMarker] = useState<{ lat: number; lng: number } | null>(null);
   const [viewMode, setViewMode] = useState<'intro' | 'globe'>('intro');
@@ -233,7 +345,7 @@ export default function App() {
   };
 
   const handleCreateAvatar = async () => {
-    if (!user || !tempMarker || !newAvatarDesc) return;
+    if (!user || !tempMarker || !newAvatarDesc || !newAvatarImageUrl) return;
 
     const now = new Date().toISOString();
 
@@ -245,7 +357,9 @@ export default function App() {
         age: newAvatarAge,
         gender: newAvatarGender,
         occupation: newAvatarOccupation,
-        description: newAvatarDesc
+        description: newAvatarDesc,
+        lat: tempMarker.lat,
+        lng: tempMarker.lng
       });
 
       const avatarData = {
@@ -256,6 +370,7 @@ export default function App() {
         race: newAvatarRace,
         occupation: newAvatarOccupation,
         color: newAvatarColor,
+        imageUrl: newAvatarImageUrl,
         lat: tempMarker.lat,
         lng: tempMarker.lng,
         lastVisit: now,
@@ -275,6 +390,7 @@ export default function App() {
       setNewAvatarRace('Prefer not to say');
       setNewAvatarOccupation('');
       setNewAvatarColor('#ffffff');
+      setNewAvatarImageUrl('');
       setSearchQuery('');
       
       // Zoom to the new digital self
@@ -339,6 +455,23 @@ export default function App() {
         .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setLifeLogs(existingLogs);
 
+      // Refresh status if stale (older than 1 hour)
+      const lastVisit = avatar.lastVisit ? new Date(avatar.lastVisit) : new Date(0);
+      const isStale = (new Date().getTime() - lastVisit.getTime()) > (1000 * 60 * 60);
+
+      if (isStale) {
+        try {
+          const newStatus = await generateCurrentState(avatar);
+          await updateDoc(doc(db, 'avatars', avatar.id), {
+            currentStatus: newStatus,
+            lastVisit: new Date().toISOString()
+          });
+          setSelectedAvatar(prev => prev ? { ...prev, currentStatus: newStatus, lastVisit: new Date().toISOString() } : null);
+        } catch (error) {
+          console.error("Failed to refresh status", error);
+        }
+      }
+
       // If it's the user's avatar, check for missing days and generate new logs
       if (avatar.uid === user?.uid) {
         setIsGeneratingLogs(true);
@@ -371,12 +504,8 @@ export default function App() {
             }
           }
 
-          // Always generate a new current state
-          const newStatus = await generateCurrentState(avatar);
-          
           // Update avatar with new status and lastLogTimestamp
           const updateData: any = {
-            currentStatus: newStatus,
             lastVisit: now.toISOString()
           };
           if (newLogs.length > 0) {
@@ -408,8 +537,7 @@ export default function App() {
   const globeData = useMemo(() => {
     return allAvatars.map(a => ({
       ...a,
-      size: a.uid === user?.uid ? 1.2 : 0.6, // Increased from 0.4 to 0.6 (1.5x)
-      color: a.color || (a.uid === user?.uid ? '#ffffff' : '#a1a1aa')
+      size: a.uid === user?.uid ? 3.6 : 1.8,
     }));
   }, [allAvatars, user]);
 
@@ -444,14 +572,34 @@ export default function App() {
               globeImageUrl="https://i.postimg.cc/d3QZvHqD/Untitled-Artwork-39.png"
             backgroundImageUrl=""
             backgroundColor="rgba(0,0,0,0)"
-            labelsData={globeData}
-            labelLat="lat"
-            labelLng="lng"
-            labelDotRadius="size"
-            labelColor="color"
-            labelText={() => ""}
-            labelIncludeDot={true}
-            onLabelClick={(label: any) => setSelectedAvatar(label)}
+            htmlElementsData={globeData}
+            htmlElement={(d: any) => {
+              const el = document.createElement('div');
+              el.style.width = `${d.size * 15}px`;
+              el.style.height = `${d.size * 15}px`;
+              el.style.pointerEvents = 'auto';
+              el.style.cursor = 'pointer';
+              el.style.transition = 'transform 0.2s ease-in-out';
+              
+              const img = document.createElement('img');
+              img.src = d.imageUrl || 'https://picsum.photos/seed/avatar/200/200';
+              img.style.width = '100%';
+              img.style.height = '100%';
+              img.style.objectFit = 'contain';
+              img.style.filter = `drop-shadow(0 0 5px ${d.color || '#ffffff'})`;
+              
+              el.appendChild(img);
+              
+              el.onmouseenter = () => {
+                el.style.transform = 'scale(1.2)';
+              };
+              el.onmouseleave = () => {
+                el.style.transform = 'scale(1)';
+              };
+              el.onclick = () => focusOnAvatar(d);
+              
+              return el;
+            }}
             onGlobeClick={(coords) => {
               if (isCreating) setTempMarker({ lat: coords.lat, lng: coords.lng });
               else setSelectedAvatar(null);
@@ -690,16 +838,8 @@ export default function App() {
                   </div>
 
                   <div>
-                    <label className="text-[10px] uppercase tracking-widest opacity-40 block mb-2">Digital Self Color</label>
-                    <div className="flex items-center gap-4 p-3 border border-white/10 rounded-xl bg-white/5">
-                      <input 
-                        type="color"
-                        value={newAvatarColor}
-                        onChange={(e) => setNewAvatarColor(e.target.value)}
-                        className="w-10 h-10 rounded-full border-0 bg-transparent cursor-pointer overflow-hidden"
-                      />
-                      <span className="text-xs font-mono opacity-60 uppercase">{newAvatarColor}</span>
-                    </div>
+                    <label className="text-[10px] uppercase tracking-widest opacity-40 block mb-2">3. Draw Your Avatar</label>
+                    <DrawingCanvas onSave={setNewAvatarImageUrl} initialColor={newAvatarColor} />
                   </div>
 
                   <div>
@@ -719,7 +859,7 @@ export default function App() {
                   )}
 
                   <button 
-                    disabled={!tempMarker || !newAvatarDesc}
+                    disabled={!tempMarker || !newAvatarDesc || !newAvatarImageUrl}
                     onClick={handleCreateAvatar}
                     className="w-full py-4 bg-white text-black rounded-full text-xs tracking-[0.2em] font-bold disabled:opacity-20 disabled:cursor-not-allowed hover:bg-white/90 transition-all"
                   >
@@ -744,11 +884,15 @@ export default function App() {
                   <div className="p-8">
                     <div className="flex justify-between items-start mb-6">
                       <div>
-                        <h3 className="text-sm tracking-widest font-light mb-1 flex items-center gap-2">
-                          <div 
-                            className="w-2 h-2 rounded-full" 
-                            style={{ backgroundColor: selectedAvatar.color || '#ffffff' }} 
-                          />
+                        <h3 className="text-sm tracking-widest font-light mb-1 flex items-center gap-3">
+                          <div className="w-10 h-10 bg-white/5 rounded-lg overflow-hidden border border-white/10">
+                            <img 
+                              src={selectedAvatar.imageUrl} 
+                              alt="Avatar" 
+                              className="w-full h-full object-contain"
+                              style={{ filter: `drop-shadow(0 0 5px ${selectedAvatar.color || '#ffffff'})` }}
+                            />
+                          </div>
                           {selectedAvatar.uid === user?.uid ? 'MY DIGITAL SELF' : 'ANOTHER LIFE'}
                         </h3>
                         <p className="text-[10px] opacity-40 uppercase tracking-widest flex items-center gap-1">
@@ -825,11 +969,11 @@ export default function App() {
                         </p>
                       ) : (
                         <div className="space-y-2">
-                          <p className="text-[8px] opacity-30 uppercase tracking-widest">AI Summary</p>
+                          <p className="text-[8px] opacity-30 uppercase tracking-widest">who is this person?</p>
                           {isSummarizing ? (
                             <div className="flex items-center gap-2 py-2">
                               <Loader2 size={10} className="animate-spin opacity-40" />
-                              <span className="text-[10px] opacity-40 italic">Generating bio...</span>
+                              <span className="text-[10px] opacity-40 italic">fetching personality...</span>
                             </div>
                           ) : (
                             <p className="text-xs font-light leading-relaxed text-emerald-400/80 italic">
@@ -850,41 +994,43 @@ export default function App() {
                     )}
 
                     {/* Life Log Section */}
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center">
-                        <p className="text-[10px] opacity-40 uppercase tracking-widest">Life Log</p>
-                        {isGeneratingLogs && (
-                          <div className="flex items-center gap-2">
-                            <Loader2 size={10} className="animate-spin opacity-40" />
-                            <span className="text-[8px] opacity-40 uppercase tracking-widest">Living...</span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="relative space-y-6 pl-4 border-l border-white/10 ml-1">
-                        {lifeLogs.length > 0 ? (
-                          lifeLogs.map((log) => (
-                            <div key={log.id} className="relative">
-                              {/* Timeline Dot */}
-                              <div className="absolute -left-[21px] top-1 w-2 h-2 rounded-full bg-white/20 border border-black" />
-                              
-                              <div className="p-4 bg-white/5 rounded-2xl border border-white/5 hover:bg-white/10 transition-all">
-                                <p className="text-[8px] opacity-30 uppercase mb-1">
-                                  {format(new Date(log.timestamp), 'MMMM d, yyyy — h:mm a')}
-                                </p>
-                                <p className="text-xs font-light leading-relaxed text-white/80">
-                                  {log.text}
-                                </p>
-                              </div>
+                    {selectedAvatar.uid === user?.uid && (
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <p className="text-[10px] opacity-40 uppercase tracking-widest">Life Log</p>
+                          {isGeneratingLogs && (
+                            <div className="flex items-center gap-2">
+                              <Loader2 size={10} className="animate-spin opacity-40" />
+                              <span className="text-[8px] opacity-40 uppercase tracking-widest">Living...</span>
                             </div>
-                          ))
-                        ) : (
-                          <div className="p-8 text-center border border-dashed border-white/10 rounded-2xl -ml-4">
-                            <p className="text-[10px] opacity-30 uppercase tracking-widest">No entries yet</p>
-                          </div>
-                        )}
+                          )}
+                        </div>
+                        
+                        <div className="relative space-y-6 pl-4 border-l border-white/10 ml-1">
+                          {lifeLogs.length > 0 ? (
+                            lifeLogs.map((log) => (
+                              <div key={log.id} className="relative">
+                                {/* Timeline Dot */}
+                                <div className="absolute -left-[21px] top-1 w-2 h-2 rounded-full bg-white/20 border border-black" />
+                                
+                                <div className="p-4 bg-white/5 rounded-2xl border border-white/5 hover:bg-white/10 transition-all">
+                                  <p className="text-[8px] opacity-30 uppercase mb-1">
+                                    {format(new Date(log.timestamp), 'MMMM d, yyyy — h:mm a')}
+                                  </p>
+                                  <p className="text-xs font-light leading-relaxed text-white/80">
+                                    {log.text}
+                                  </p>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="p-8 text-center border border-dashed border-white/10 rounded-2xl -ml-4">
+                              <p className="text-[10px] opacity-30 uppercase tracking-widest">No entries yet</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               </motion.div>
