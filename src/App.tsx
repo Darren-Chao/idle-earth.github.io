@@ -21,7 +21,8 @@ import {
   Loader2,
   X,
   Search,
-  Trash2
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { debounce } from 'lodash';
@@ -61,6 +62,7 @@ const DrawingCanvas = ({ onSave, initialColor = '#ffffff' }: { onSave: (dataUrl:
   const [isDrawing, setIsDrawing] = useState(false);
   const [color, setColor] = useState(initialColor);
   const [brushSize, setBrushSize] = useState(5);
+  const [tool, setTool] = useState<'brush' | 'fill'>('brush');
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -73,49 +75,149 @@ const DrawingCanvas = ({ onSave, initialColor = '#ffffff' }: { onSave: (dataUrl:
     ctx.lineWidth = brushSize;
   }, [color, brushSize]);
 
+  const floodFill = (ctx: CanvasRenderingContext2D, startX: number, startY: number, fillColor: string) => {
+    const w = ctx.canvas.width;
+    const h = ctx.canvas.height;
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+    
+    const startPos = (startY * w + startX) * 4;
+    const startR = data[startPos];
+    const startG = data[startPos + 1];
+    const startB = data[startPos + 2];
+    const startA = data[startPos + 3];
+
+    let fillR = 255, fillG = 255, fillB = 255, fillA = 255;
+    if (fillColor.startsWith('#')) {
+      const hex = fillColor.replace(/^#/, '');
+      if (hex.length === 6) {
+        fillR = parseInt(hex.substring(0, 2), 16);
+        fillG = parseInt(hex.substring(2, 4), 16);
+        fillB = parseInt(hex.substring(4, 6), 16);
+      }
+    }
+
+    if (startR === fillR && startG === fillG && startB === fillB && startA === fillA) return;
+
+    const matchStartColor = (pos: number) => {
+      return data[pos] === startR && data[pos+1] === startG && data[pos+2] === startB && data[pos+3] === startA;
+    };
+
+    const colorPixel = (pos: number) => {
+      data[pos] = fillR;
+      data[pos+1] = fillG;
+      data[pos+2] = fillB;
+      data[pos+3] = fillA;
+    };
+
+    const pixelStack = [[startX, startY]];
+
+    while(pixelStack.length) {
+      const newPos = pixelStack.pop()!;
+      const x = newPos[0];
+      let y = newPos[1];
+      
+      let pixelPos = (y * w + x) * 4;
+      while(y >= 0 && matchStartColor(pixelPos)) {
+        y--;
+        pixelPos -= w * 4;
+      }
+      pixelPos += w * 4;
+      y++;
+      
+      let reachLeft = false;
+      let reachRight = false;
+      
+      while(y < h && matchStartColor(pixelPos)) {
+        colorPixel(pixelPos);
+        
+        if (x > 0) {
+          if (matchStartColor(pixelPos - 4)) {
+            if (!reachLeft) {
+              pixelStack.push([x - 1, y]);
+              reachLeft = true;
+            }
+          } else if (reachLeft) {
+            reachLeft = false;
+          }
+        }
+        
+        if (x < w - 1) {
+          if (matchStartColor(pixelPos + 4)) {
+            if (!reachRight) {
+              pixelStack.push([x + 1, y]);
+              reachRight = true;
+            }
+          } else if (reachRight) {
+            reachRight = false;
+          }
+        }
+        
+        y++;
+        pixelPos += w * 4;
+      }
+    }
+    
+    ctx.putImageData(imgData, 0, 0);
+  };
+
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
-    setIsDrawing(true);
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
     let x, y;
     if ('touches' in e) {
-      x = e.touches[0].clientX - rect.left;
-      y = e.touches[0].clientY - rect.top;
+      x = Math.floor((e.touches[0].clientX - rect.left) * scaleX);
+      y = Math.floor((e.touches[0].clientY - rect.top) * scaleY);
     } else {
-      x = e.clientX - rect.left;
-      y = e.clientY - rect.top;
+      x = Math.floor((e.clientX - rect.left) * scaleX);
+      y = Math.floor((e.clientY - rect.top) * scaleY);
     }
-    ctx.beginPath();
-    ctx.moveTo(x, y);
+
+    if (tool === 'fill') {
+      floodFill(ctx, x, y, color);
+      onSave(canvas.toDataURL());
+    } else {
+      setIsDrawing(true);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    }
   };
 
   const stopDrawing = () => {
-    setIsDrawing(false);
-    const canvas = canvasRef.current;
-    if (canvas) {
-      onSave(canvas.toDataURL());
+    if (isDrawing) {
+      setIsDrawing(false);
+      const canvas = canvasRef.current;
+      if (canvas) {
+        onSave(canvas.toDataURL());
+      }
     }
   };
 
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!isDrawing) return;
+    if (!isDrawing || tool === 'fill') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
     let x, y;
     if ('touches' in e) {
-      x = e.touches[0].clientX - rect.left;
-      y = e.touches[0].clientY - rect.top;
+      x = (e.touches[0].clientX - rect.left) * scaleX;
+      y = (e.touches[0].clientY - rect.top) * scaleY;
     } else {
-      x = e.clientX - rect.left;
-      y = e.clientY - rect.top;
+      x = (e.clientX - rect.left) * scaleX;
+      y = (e.clientY - rect.top) * scaleY;
     }
 
     ctx.lineTo(x, y);
@@ -134,7 +236,7 @@ const DrawingCanvas = ({ onSave, initialColor = '#ffffff' }: { onSave: (dataUrl:
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
           {['#ffffff', '#ff4444', '#44ff44', '#4444ff', '#ffff44', '#ff44ff', '#44ffff'].map(c => (
             <button
               key={c}
@@ -144,10 +246,25 @@ const DrawingCanvas = ({ onSave, initialColor = '#ffffff' }: { onSave: (dataUrl:
             />
           ))}
           <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-5 h-5 bg-transparent border-0 p-0 cursor-pointer" />
+          
+          <div className="flex bg-white/10 rounded-lg ml-2 p-1 gap-1">
+            <button 
+              onClick={() => setTool('brush')}
+              className={`px-3 py-1 rounded text-[10px] uppercase font-bold tracking-widest ${tool === 'brush' ? 'bg-white text-black' : 'text-white/60 hover:text-white'}`}
+            >
+              Draw
+            </button>
+            <button 
+              onClick={() => setTool('fill')}
+              className={`px-3 py-1 rounded text-[10px] uppercase font-bold tracking-widest ${tool === 'fill' ? 'bg-white text-black' : 'text-white/60 hover:text-white'}`}
+            >
+              Fill
+            </button>
+          </div>
         </div>
         <button onClick={clear} className="text-[10px] uppercase tracking-widest opacity-40 hover:opacity-100">Clear</button>
       </div>
-      <div className="relative aspect-square w-full bg-white/5 rounded-xl overflow-hidden border border-white/10 cursor-crosshair">
+      <div className={`relative aspect-square w-full bg-white/5 rounded-xl overflow-hidden border border-white/10 ${tool === 'brush' ? 'cursor-crosshair' : 'cursor-pointer'}`}>
         <canvas
           ref={canvasRef}
           width={400}
@@ -174,6 +291,7 @@ export default function App() {
   const [selectedAvatar, setSelectedAvatar] = useState<AvatarData | null>(null);
   const [lifeLogs, setLifeLogs] = useState<LifeLog[]>([]);
   const [isGeneratingLogs, setIsGeneratingLogs] = useState(false);
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   
   // New Avatar State
@@ -265,6 +383,32 @@ export default function App() {
     }, 500);
     return () => clearTimeout(timer);
   }, [isRotating, isCreating]);
+
+  // Handle Earth drag and zoom scaling
+  useEffect(() => {
+    let animationFrameId: number;
+    let isActive = true;
+
+    const checkScale = () => {
+      if (!isActive) return;
+      if (globeRef.current) {
+        const pov = globeRef.current.pointOfView();
+        if (pov && pov.altitude) {
+          // Calculate scale based on standard altitude 2.5
+          const scale = 2.5 / pov.altitude;
+          document.documentElement.style.setProperty('--avatar-scale', String(scale));
+        }
+      }
+      animationFrameId = requestAnimationFrame(checkScale);
+    };
+
+    checkScale();
+
+    return () => {
+      isActive = false;
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, []);
 
   // Fetch all avatars
   useEffect(() => {
@@ -410,8 +554,13 @@ export default function App() {
     if (!myAvatar || !user) return;
     
     try {
-      // Delete the avatar document
-      await deleteDoc(doc(db, 'avatars', myAvatar.id));
+      // Find all avatars for the user to remove any duplicates
+      const q = query(collection(db, 'avatars'), where('uid', '==', user.uid));
+      const snapshot = await getDocs(q);
+      
+      // Delete all avatar documents associated with user
+      const deletePromises = snapshot.docs.map(docSnap => deleteDoc(doc(db, 'avatars', docSnap.id)));
+      await Promise.all(deletePromises);
       
       setMyAvatar(null);
       setSelectedAvatar(null);
@@ -477,21 +626,28 @@ export default function App() {
         setIsGeneratingLogs(true);
         try {
           const now = new Date();
-          const lastLogDate = avatar.lastLogTimestamp ? new Date(avatar.lastLogTimestamp) : new Date(avatar.createdAt);
-          
-          // Calculate days passed (ignoring time for day count)
-          const start = new Date(lastLogDate.getFullYear(), lastLogDate.getMonth(), lastLogDate.getDate());
-          const end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          const diffTime = Math.abs(end.getTime() - start.getTime());
-          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+          const createdAt = new Date(avatar.createdAt);
+          const diffMs = now.getTime() - createdAt.getTime();
+          const diffHours = diffMs / (1000 * 60 * 60);
 
-          let newLogs: { text: string, timestamp: string }[] = [];
-          if (diffDays > 0) {
-            newLogs = await generateLifeLogs(
+          let targetLogCount = 0;
+          if (diffHours >= 7) {
+            targetLogCount = 7;
+          } else {
+            targetLogCount = Math.floor(diffHours);
+          }
+          
+          if (targetLogCount > 0 && (existingLogs.length !== targetLogCount || isStale)) {
+            // Delete all existing logs to cleanly rewrite the dynamically spaced history
+            const deleteLogsPromises = logsSnap.docs.map(d => deleteDoc(d.ref));
+            await Promise.all(deleteLogsPromises);
+            
+            const newLogs = await generateLifeLogs(
               avatar, 
-              existingLogs.map(l => l.text).reverse(), 
-              diffDays, 
-              lastLogDate
+              [], 
+              targetLogCount, 
+              createdAt,
+              now
             );
 
             // Save new logs
@@ -502,29 +658,23 @@ export default function App() {
                 timestamp: log.timestamp
               });
             }
-          }
-
-          // Update avatar with new status and lastLogTimestamp
-          const updateData: any = {
-            lastVisit: now.toISOString()
-          };
-          if (newLogs.length > 0) {
-            updateData.lastLogTimestamp = newLogs[newLogs.length - 1].timestamp;
-          }
-
-          await updateDoc(doc(db, 'avatars', avatar.id), updateData);
-          
-          // Update local state
-          const updatedAvatar = { ...avatar, ...updateData };
-          setSelectedAvatar(updatedAvatar);
-          
-          // Refresh logs if new ones were added
-          if (newLogs.length > 0) {
+            
+            // Refresh logs
             const refreshedLogsSnap = await getDocs(logsQuery);
             const refreshedLogs = refreshedLogsSnap.docs.map(d => ({ id: d.id, ...d.data() } as LifeLog))
               .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
             setLifeLogs(refreshedLogs);
           }
+
+          // Always update lastVisit
+          const updateData: any = {
+            lastVisit: now.toISOString()
+          };
+          await updateDoc(doc(db, 'avatars', avatar.id), updateData);
+          
+          // Update local state
+          const updatedAvatar = { ...avatar, ...updateData };
+          setSelectedAvatar(updatedAvatar);
         } catch (error) {
           console.error("Failed to update life logs", error);
         } finally {
@@ -534,10 +684,83 @@ export default function App() {
     }
   };
 
+  const forceNewCurrentState = async () => {
+    if (!selectedAvatar || !user || selectedAvatar.uid !== user.uid) return;
+    setIsRefreshingStatus(true);
+    try {
+      const newStatus = await generateCurrentState(selectedAvatar, selectedAvatar.currentStatus);
+      const updateData = {
+        currentStatus: newStatus,
+        lastVisit: new Date().toISOString()
+      };
+      await updateDoc(doc(db, 'avatars', selectedAvatar.id), updateData);
+      
+      const updatedAvatar = { ...selectedAvatar, ...updateData };
+      setSelectedAvatar(updatedAvatar);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsRefreshingStatus(false);
+    }
+  };
+
+  const forceNewLifeLog = async () => {
+    if (!selectedAvatar || !user || selectedAvatar.uid !== user.uid) return;
+    setIsGeneratingLogs(true);
+    try {
+      const now = new Date();
+      
+      const newLogs = await generateLifeLogs(
+        selectedAvatar,
+        lifeLogs.map(l => l.text).reverse(),
+        1,
+        now,
+        now
+      );
+      
+      if (newLogs.length > 0) {
+        const log = newLogs[0];
+        
+        // Ensure cap of 7 logs
+        if (lifeLogs.length >= 7) {
+          const oldestLog = lifeLogs[lifeLogs.length - 1]; // sorted newest first
+          await deleteDoc(doc(db, 'avatars', selectedAvatar.id, 'life_logs', oldestLog.id));
+        }
+
+        await addDoc(collection(db, 'avatars', selectedAvatar.id, 'life_logs'), {
+          uid: selectedAvatar.uid,
+          text: log.text,
+          timestamp: log.timestamp
+        });
+
+        // Update avatar lastVisit
+        const updateData: any = {
+          lastVisit: now.toISOString()
+        };
+        await updateDoc(doc(db, 'avatars', selectedAvatar.id), updateData);
+        setSelectedAvatar({ ...selectedAvatar, ...updateData });
+
+        // Refresh existing life logs
+        const logsQuery = query(
+          collection(db, 'avatars', selectedAvatar.id, 'life_logs'),
+          where('uid', '==', selectedAvatar.uid)
+        );
+        const refreshedLogsSnap = await getDocs(logsQuery);
+        const refreshedLogs = refreshedLogsSnap.docs.map(d => ({ id: d.id, ...d.data() } as LifeLog))
+          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        setLifeLogs(refreshedLogs);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsGeneratingLogs(false);
+    }
+  };
+
   const globeData = useMemo(() => {
     return allAvatars.map(a => ({
       ...a,
-      size: a.uid === user?.uid ? 3.6 : 1.8,
+      size: a.uid === user?.uid ? 4.7 : 2.34,
     }));
   }, [allAvatars, user]);
 
@@ -573,13 +796,13 @@ export default function App() {
             backgroundImageUrl=""
             backgroundColor="rgba(0,0,0,0)"
             htmlElementsData={globeData}
+            htmlElementsTransitionTime={0}
             htmlElement={(d: any) => {
               const el = document.createElement('div');
               el.style.width = `${d.size * 15}px`;
               el.style.height = `${d.size * 15}px`;
               el.style.pointerEvents = 'auto';
               el.style.cursor = 'pointer';
-              el.style.transition = 'transform 0.2s ease-in-out';
               
               const img = document.createElement('img');
               img.src = d.imageUrl || 'https://picsum.photos/seed/avatar/200/200';
@@ -587,16 +810,25 @@ export default function App() {
               img.style.height = '100%';
               img.style.objectFit = 'contain';
               img.style.filter = `drop-shadow(0 0 5px ${d.color || '#ffffff'})`;
+              img.style.transition = 'transform 0.2s ease-in-out';
+              img.style.transform = `scale(var(--avatar-scale, 1))`;
+              
+              img.style.pointerEvents = 'auto';
               
               el.appendChild(img);
               
               el.onmouseenter = () => {
-                el.style.transform = 'scale(1.2)';
+                img.style.transform = `scale(calc(var(--avatar-scale, 1) * 1.3))`;
               };
               el.onmouseleave = () => {
-                el.style.transform = 'scale(1)';
+                img.style.transform = `scale(var(--avatar-scale, 1))`;
               };
-              el.onclick = () => focusOnAvatar(d);
+              el.onpointerdown = (e) => e.stopPropagation();
+              el.onpointerup = (e) => e.stopPropagation();
+              el.onclick = (e) => {
+                e.stopPropagation();
+                focusOnAvatar(d);
+              };
               
               return el;
             }}
@@ -985,8 +1217,25 @@ export default function App() {
                     </div>
 
                     {selectedAvatar.currentStatus && (
-                      <div className="mb-8">
-                        <p className="text-[10px] opacity-40 uppercase tracking-widest mb-2">Current State</p>
+                      <div className="mb-8 relative group">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <p className="text-[10px] opacity-40 uppercase tracking-widest">Current State</p>
+                            {selectedAvatar.uid === user?.uid && (
+                              <p className="text-[8px] opacity-30 italic mt-0.5">Updates automatically once an hour.</p>
+                            )}
+                          </div>
+                          {selectedAvatar.uid === user?.uid && (
+                            <button
+                              onClick={forceNewCurrentState}
+                              disabled={isRefreshingStatus}
+                              className="text-[10px] opacity-80 hover:opacity-100 transition-opacity bg-white/10 hover:bg-white/20 px-2 py-1 rounded flex items-center gap-1 shrink-0"
+                            >
+                              <RefreshCw size={10} className={isRefreshingStatus ? 'animate-spin' : ''} />
+                              {isRefreshingStatus ? 'UPDATING...' : 'FORCE UPDATE'}
+                            </button>
+                          )}
+                        </div>
                         <p className="text-sm font-light text-emerald-400/90 leading-relaxed">
                           {selectedAvatar.currentStatus}
                         </p>
@@ -996,13 +1245,24 @@ export default function App() {
                     {/* Life Log Section */}
                     {selectedAvatar.uid === user?.uid && (
                       <div className="space-y-4">
-                        <div className="flex justify-between items-center">
-                          <p className="text-[10px] opacity-40 uppercase tracking-widest">Life Log</p>
-                          {isGeneratingLogs && (
+                        <div className="flex justify-between items-start group">
+                          <div>
+                            <p className="text-[10px] opacity-40 uppercase tracking-widest">Life Log</p>
+                            <p className="text-[8px] opacity-30 italic mt-0.5">Updates automatically once an hour.</p>
+                          </div>
+                          {isGeneratingLogs ? (
                             <div className="flex items-center gap-2">
                               <Loader2 size={10} className="animate-spin opacity-40" />
                               <span className="text-[8px] opacity-40 uppercase tracking-widest">Living...</span>
                             </div>
+                          ) : (
+                            <button
+                              onClick={forceNewLifeLog}
+                              className="text-[10px] opacity-80 hover:opacity-100 transition-opacity bg-white/10 hover:bg-white/20 px-2 py-1 rounded flex items-center gap-1 shrink-0 mt-0.5"
+                            >
+                              <RefreshCw size={10} />
+                              PUSH TIMELINE
+                            </button>
                           )}
                         </div>
                         
@@ -1043,3 +1303,4 @@ export default function App() {
     </div>
   );
 }
+

@@ -9,7 +9,7 @@ export async function summarizeDescription(description: string): Promise<string>
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       contents: `You are a creative writer. Based on the following description, write a short, personal, and slightly introspective life snapshot. 
       It should be 2 sentences long. Feel like a brief but meaningful glimpse into their character.
       Be concrete and human. Avoid abstract or overly poetic phrases.
@@ -37,25 +37,28 @@ export async function generateLifeLogs(
   profile: any, 
   previousLogs: string[], 
   count: number,
-  startDate: Date
+  startDate: Date,
+  endDate: Date
 ): Promise<{ text: string, timestamp: string }[]> {
   if (count <= 0) return [];
   
   try {
+    const previousContext = previousLogs && previousLogs.length > 0 
+      ? `\n\nPrevious sequential logs to build upon:\n${previousLogs.slice(-5).join('\n')}` 
+      : '';
+
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `Generate ${count} daily life log entries for a person with this profile:
-      Age: ${profile.age}, Gender: ${profile.gender}, Occupation: ${profile.occupation}, Personality: ${profile.description}.
-      
-      Previous logs for context:
-      ${previousLogs.slice(-5).join('\n')}
+      model: "gemini-2.5-flash",
+      contents: `Generate ${count} life log entries for a person with this profile:
+      Age: ${profile.age}, Gender: ${profile.gender}, Occupation: ${profile.occupation}, Personality: ${profile.description}.${previousContext}
       
       Requirements:
       - Each entry is exactly ONE short sentence.
       - Casual, human-sounding, slightly playful or personal.
-      - Reflect everyday activities or small life moments.
+      - Reflect everyday activities, changing seasons, or small life moments.
       - Return as a JSON array of strings.
-      - Do not include dates in the strings.
+      - Do not include explicit dates in the strings.
+      - The progression should feel natural over time.
       
       Example: ["Ran a marathon today. So tired.", "Had coffee with a friend and talked about the future."]`,
       config: {
@@ -68,13 +71,11 @@ export async function generateLifeLogs(
     });
 
     const texts: string[] = JSON.parse(response.text || "[]");
+    const timeSpan = endDate.getTime() - startDate.getTime();
+    const interval = count > 1 ? timeSpan / (count - 1) : 0;
     
     return texts.slice(0, count).map((text, i) => {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + i + 1);
-      // Random time within that day
-      date.setHours(Math.floor(Math.random() * 24), Math.floor(Math.random() * 60));
-      
+      const date = new Date(startDate.getTime() + (i * interval));
       return {
         text,
         timestamp: date.toISOString()
@@ -86,7 +87,7 @@ export async function generateLifeLogs(
   }
 }
 
-export async function generateCurrentState(profile: any): Promise<string> {
+export async function generateCurrentState(profile: any, previousState?: string): Promise<string> {
   // Calculate rough local time based on longitude (15 degrees = 1 hour)
   const utcDate = new Date();
   const offsetHours = (profile.lng || 0) / 15;
@@ -101,15 +102,17 @@ export async function generateCurrentState(profile: any): Promise<string> {
   else timeOfDay = "night";
 
   try {
+    const previousStateContext = previousState ? `\n- Previous Activity: "${previousState}"\nThe new activity should be a logical continuation or a natural shift from their previous activity.` : '';
+
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       contents: `You are a creative writer. Generate a short, literal status update (one sentence) for what this person is doing RIGHT NOW.
       
       Context:
       - Local Time: ${timeOfDay} (around ${hour}:00)
       - Location: Lat ${profile.lat}, Lng ${profile.lng}
       - Profile: Age ${profile.age}, Gender ${profile.gender}, Occupation ${profile.occupation}
-      - Personality: ${profile.description}
+      - Personality: ${profile.description}${previousStateContext}
       
       Requirements:
       - Be very literal and concrete (e.g., "Sipping a protein shake", "Watching a late-night talk show", "Fast asleep").
@@ -131,3 +134,5 @@ export async function generateCurrentState(profile: any): Promise<string> {
     return "Just taking a moment to breathe.";
   }
 }
+
+
